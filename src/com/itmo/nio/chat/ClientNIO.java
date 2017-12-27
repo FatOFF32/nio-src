@@ -6,9 +6,12 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
+import java.util.Iterator;
 import java.util.Scanner;
+import java.util.Set;
 
 /**
  * Created by xmitya on 10.01.17.
@@ -23,7 +26,7 @@ public class ClientNIO {
         new Thread(new Sender(socket)).start();
     }
 
-    private static class NioClient extends Worker {
+    private static class Receiver extends Worker {
         private static final int BUF_SIZE = 1024;
         private SocketChannel socketCh;
         private Selector sel;
@@ -32,9 +35,28 @@ public class ClientNIO {
 
         @Override
         protected void loop() throws Exception {
-            int read = in.read(buf);
 
-            System.out.println(new String(buf, 0, read));
+            // ждем новых событий
+            sel.select();
+
+            // получим ключи, на которые пришли события
+            Set<SelectionKey> selKey = sel.selectedKeys();
+
+            // Используем итератор для того, чтобы во время итерации по элементам была возможность удалять элементы из итератора
+            Iterator<SelectionKey> iterator = selKey.iterator();
+
+            while (iterator.hasNext()){
+
+                SelectionKey curKey = iterator.next();
+
+                if (curKey.isReadable()){
+
+                    int read = socketCh.read(buf);
+                    System.out.println(new String(buf.array(), 0, read));
+                }
+
+            }
+
         }
 
         @Override
@@ -47,16 +69,21 @@ public class ClientNIO {
             sel = Selector.open();
 
             // открываем канал, который будет слушать сообщения, и отправлять наши сообщения
-            socketCh = SocketChannel.open(new InetSocketAddress("localhost", 12345));
+            socketCh = SocketChannel.open();
 
-            serverCh.accept();
+            // конектимся к серверу
+            socketCh.connect(new InetSocketAddress("localhost", 12345));
+
+            socketCh.configureBlocking(false);
+
+            socketCh.register(sel, socketCh.validOps());
 
 
         }
 
         @Override
         protected void stop() throws Exception {
-            socket.close();
+            socketCh.close();
         }
     }
 
